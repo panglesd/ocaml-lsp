@@ -100,6 +100,10 @@ let tdoc = function
 
 let uri t = Text_document.documentUri (tdoc t)
 
+let is_dune = function
+  | Dune _ -> true
+  | Merlin _ -> false
+
 let kind t = Kind.of_fname (Uri.to_path (uri t))
 
 let syntax t = Syntax.of_language_id (Text_document.languageId (tdoc t))
@@ -108,7 +112,9 @@ let timer = function
   | Dune _ -> Code_error.raise "Document.dune" []
   | Merlin m -> m.timer
 
-let source t = Msource.make (Text_document.text (tdoc t))
+let text t = Text_document.text (tdoc t)
+
+let source t = Msource.make (text t)
 
 let await task =
   let* () = Server.on_cancel (fun () -> Scheduler.cancel_task task) in

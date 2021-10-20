@@ -24,6 +24,8 @@ module Kind : sig
   val of_fname : string -> t
 end
 
+val is_dune : t -> bool
+
 val kind : t -> Kind.t
 
 val syntax : t -> Syntax.t
@@ -40,6 +42,8 @@ val make_dune : DidOpenTextDocumentParams.t -> t
 val timer : t -> Scheduler.timer
 
 val uri : t -> Uri.t
+
+val text : t -> string
 
 val source : t -> Msource.t
 
