@@ -341,7 +341,21 @@ module Formatter = struct
 
   let run rpc doc =
     let state = Server.state rpc in
-    if Document.is_dune doc then
+    if Document.is_merlin doc then
+      let* res = Ocamlformat.run state.State.ocamlformat doc in
+      match res with
+      | Ok result -> Fiber.return (Some result)
+      | Error e ->
+        let message = Ocamlformat.message e in
+        let error = jsonrpc_error e in
+        let msg = ShowMessageParams.create ~message ~type_:Warning in
+        let+ () =
+          let state : State.t = Server.state rpc in
+          task_if_running state ~f:(fun () ->
+              Server.notification rpc (ShowMessage msg))
+        in
+        Jsonrpc.Response.Error.raise error
+    else
       match Dune.for_doc (State.dune state) doc with
       | [] ->
         let message =
@@ -365,20 +379,6 @@ module Formatter = struct
         in
         let+ to_ = Dune.Instance.format_dune_file dune doc in
         Some (Diff.edit ~from:(Document.text doc) ~to_)
-    else
-      let* res = Ocamlformat.run state.State.ocamlformat doc in
-      match res with
-      | Ok result -> Fiber.return (Some result)
-      | Error e ->
-        let message = Ocamlformat.message e in
-        let error = jsonrpc_error e in
-        let msg = ShowMessageParams.create ~message ~type_:Warning in
-        let+ () =
-          let state : State.t = Server.state rpc in
-          task_if_running state ~f:(fun () ->
-              Server.notification rpc (ShowMessage msg))
-        in
-        Jsonrpc.Response.Error.raise error
 end
 
 let markdown_support (client_capabilities : ClientCapabilities.t) ~field =
@@ -1016,7 +1016,7 @@ let on_notification server (notification : Client_notification.t) :
     let* doc =
       let delay = Configuration.diagnostics_delay state.configuration in
       let+ timer = Scheduler.create_timer ~delay in
-      Document.make state.merlin_config timer state.merlin params
+      Document.make_merlin state.merlin_config timer state.merlin params
     in
     Document_store.put store doc;
     let+ () = set_diagnostics server doc in

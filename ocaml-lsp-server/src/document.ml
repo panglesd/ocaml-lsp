@@ -85,7 +85,7 @@ module Syntax = struct
 end
 
 type t =
-  | Dune of Text_document.t
+  | Other of Text_document.t
   | Merlin of
       { tdoc : Text_document.t
       ; pipeline : Mpipeline.t Lazy_fiber.t
@@ -95,21 +95,21 @@ type t =
       }
 
 let tdoc = function
-  | Dune d -> d
+  | Other d -> d
   | Merlin m -> m.tdoc
 
 let uri t = Text_document.documentUri (tdoc t)
 
-let is_dune = function
-  | Dune _ -> true
-  | Merlin _ -> false
+let is_merlin = function
+  | Other _ -> false
+  | Merlin _ -> true
 
 let kind t = Kind.of_fname (Uri.to_path (uri t))
 
 let syntax t = Syntax.of_language_id (Text_document.languageId (tdoc t))
 
 let timer = function
-  | Dune _ -> Code_error.raise "Document.dune" []
+  | Other _ -> Code_error.raise "Document.dune" []
   | Merlin m -> m.timer
 
 let text t = Text_document.text (tdoc t)
@@ -130,7 +130,7 @@ let await task =
 
 let with_pipeline (t : t) f =
   match t with
-  | Dune _ -> Code_error.raise "Document.dune" []
+  | Other _ -> Code_error.raise "Document.dune" []
   | Merlin t ->
     let* pipeline = Lazy_fiber.force t.pipeline in
     Scheduler.async_exn t.merlin (fun () ->
@@ -174,13 +174,13 @@ let make_pipeline merlin_config thread tdoc =
       | Ok s -> s
       | Error e -> Exn_with_backtrace.reraise e)
 
-let make merlin_config timer merlin_thread (tdoc : DidOpenTextDocumentParams.t)
-    =
+let make_merlin merlin_config timer merlin_thread
+    (tdoc : DidOpenTextDocumentParams.t) =
   let tdoc = Text_document.make tdoc in
   let pipeline = make_pipeline merlin_config merlin_thread tdoc in
   Merlin { merlin_config; tdoc; pipeline; merlin = merlin_thread; timer }
 
-let make_dune tdoc = Dune (Text_document.make tdoc)
+let make_other tdoc = Other (Text_document.make tdoc)
 
 let update_text ?version t changes =
   match
@@ -197,7 +197,7 @@ let update_text ?version t changes =
     t
   | tdoc -> (
     match t with
-    | Dune _ -> Dune tdoc
+    | Other _ -> Other tdoc
     | Merlin ({ merlin_config; merlin; _ } as t) ->
       let pipeline = make_pipeline merlin_config merlin tdoc in
       Merlin { t with tdoc; pipeline })
@@ -210,7 +210,7 @@ let dispatch_exn t command =
 
 let close t =
   match t with
-  | Dune _ -> Fiber.return ()
+  | Other _ -> Fiber.return ()
   | Merlin t -> Scheduler.cancel_timer t.timer
 
 let get_impl_intf_counterparts uri =

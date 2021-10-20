@@ -24,20 +24,20 @@ module Kind : sig
   val of_fname : string -> t
 end
 
-val is_dune : t -> bool
+val is_merlin : t -> bool
 
 val kind : t -> Kind.t
 
 val syntax : t -> Syntax.t
 
-val make :
+val make_merlin :
      Merlin_config.t
   -> Scheduler.timer
   -> Scheduler.thread
   -> DidOpenTextDocumentParams.t
   -> t
 
-val make_dune : DidOpenTextDocumentParams.t -> t
+val make_other : DidOpenTextDocumentParams.t -> t
 
 val timer : t -> Scheduler.timer
 
