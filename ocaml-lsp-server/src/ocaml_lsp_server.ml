@@ -287,7 +287,42 @@ let on_initialize server (ip : InitializeParams.t) =
     | None -> state
     | Some trace -> { state with trace }
   in
-  (initialize_info, state)
+  let resp =
+    match ip.capabilities.textDocument with
+    | Some
+        { TextDocumentClientCapabilities.synchronization =
+            Some
+              { TextDocumentSyncClientCapabilities.dynamicRegistration =
+                  Some true
+              ; _
+              }
+        ; _
+        } ->
+      Reply.later (fun send ->
+          let* () = send initialize_info in
+          let register =
+            RegistrationParams.create
+              ~registrations:
+                [ (let id = "ocamllsp-cram-dune-files" in
+                   let method_ = "textDocument/didOpen" in
+                   (* TODO not nice to copy paste *)
+                   let registerOptions =
+                     let documentSelector =
+                       [ "cram"; "dune"; "dune-project"; "dune-workspace" ]
+                       |> List.map ~f:(fun language ->
+                              DocumentFilter.create ~language ())
+                     in
+                     TextDocumentRegistrationOptions.create ~documentSelector ()
+                     |> TextDocumentRegistrationOptions.yojson_of_t
+                   in
+                   Registration.create ~id ~method_ ~registerOptions ())
+                ]
+          in
+          Server.request server
+            (Server_request.ClientRegisterCapability register))
+    | _ -> Reply.now initialize_info
+  in
+  (resp, state)
 
 let code_action (state : State.t) (params : CodeActionParams.t) =
   let doc =
@@ -830,7 +865,7 @@ let ocaml_on_request :
   match req with
   | Initialize ip ->
     let+ res, state = on_initialize rpc ip in
-    (Reply.now res, state)
+    (res, state)
   | Shutdown -> now ()
   | DebugTextDocumentGet { textDocument = { uri }; position = _ } -> (
     match Document_store.get_opt store uri with
