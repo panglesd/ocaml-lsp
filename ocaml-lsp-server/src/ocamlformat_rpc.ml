@@ -150,14 +150,17 @@ let get_process t =
       Code_error.raise
         "Expected to receive `Started` or `Stopped` after mailing `Start`" [])
 
-let format_type t ~typ =
+let format_type t ~typ config =
   let* p = get_process t in
   match p with
   | Error `No_process -> Fiber.return @@ Error `No_process
   | Ok p -> (
     match
       Scheduler.async (Process.thread p) (fun () ->
-          Ocamlformat_rpc_lib.format typ (Process.client p))
+          let client = Process.client p in
+          let open Result.O in
+          let* () = Ocamlformat_rpc_lib.config config client in
+          Ocamlformat_rpc_lib.format typ client)
     with
     | Error `Stopped -> Fiber.return @@ Error `No_process
     | Ok res -> (
@@ -166,9 +169,9 @@ let format_type t ~typ =
       | Ok s -> s
       | Error e -> Exn_with_backtrace.reraise e))
 
-let format_doc t doc =
+let format_doc t doc config =
   let txt = Document.source doc |> Msource.text in
-  let+ res = format_type t ~typ:txt in
+  let+ res = format_type t ~typ:txt config in
   Result.map res ~f:(fun to_ -> Diff.edit ~from:txt ~to_)
 
 let create_state () =

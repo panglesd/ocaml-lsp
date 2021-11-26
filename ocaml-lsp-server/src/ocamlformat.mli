@@ -17,3 +17,6 @@ type error =
 val message : error -> string
 
 val run : t -> Document.t -> (TextEdit.t list, error) result Fiber.t
+
+val get_config :
+  t -> Document.t -> ((string * string) list, error) result Fiber.t

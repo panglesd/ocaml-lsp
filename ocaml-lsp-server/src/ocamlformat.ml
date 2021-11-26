@@ -108,6 +108,15 @@ let args = function
     | Impl -> []
     | Intf -> [ "--interface=true" ])
 
+let get_config_args = function
+  | Ocaml uri -> [ "--print-config"; Uri.to_path uri ]
+  | Reason kind -> (
+    [ "--parse"; "re"; "--print"; "re" ]
+    @
+    match kind with
+    | Impl -> []
+    | Intf -> [ "--interface=true" ])
+
 let binary_name t =
   match t with
   | Ocaml _ -> "ocamlformat"
@@ -145,3 +154,28 @@ let run state doc : (TextEdit.t list, error) result Fiber.t =
   | Ok (binary, args, contents) ->
     exec state binary args contents
     |> Fiber.map ~f:(Result.map ~f:(fun to_ -> Diff.edit ~from:contents ~to_))
+
+let get_config state doc : ((string * string) list, error) result Fiber.t =
+  let res =
+    let open Result.O in
+    let* formatter = formatter doc in
+    let args = get_config_args formatter in
+    let+ binary = binary formatter in
+    (binary, args, Document.source doc |> Msource.text)
+  in
+  match res with
+  | Error e -> Fiber.return (Error e)
+  | Ok (binary, args, contents) ->
+    exec state binary args contents
+    |> Fiber.map
+         ~f:
+           (Result.map ~f:(fun string_config ->
+                string_config |> String.split_lines
+                |> List.filter_map ~f:(fun line ->
+                       line
+                       |> String.split_on_char ~sep:' '
+                       |> List.hd
+                       |> String.split_on_char ~sep:'='
+                       |> function
+                       | [ a; b ] -> Some (a, b)
+                       | _ -> None)))

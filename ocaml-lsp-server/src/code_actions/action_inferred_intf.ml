@@ -26,7 +26,11 @@ let code_action (state : State.t) doc (params : CodeActionParams.t) =
   | Intf ->
     let* intf = Inference.infer_intf ~force_open_impl:true state doc in
     let+ formatted_intf =
-      Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ:intf
+      let* config = Ocamlformat.get_config state.ocamlformat doc in
+      match config with
+      | Ok config ->
+        Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ:intf config
+      | Error _ -> Fiber.return @@ Error (`Msg "Error in config")
     in
     let intf =
       match formatted_intf with

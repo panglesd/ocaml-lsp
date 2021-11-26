@@ -380,11 +380,35 @@ module Formatter = struct
     let state : State.t = Server.state rpc in
     if Document.is_merlin doc then
       let* res =
-        let* res = Ocamlformat_rpc.format_doc state.ocamlformat_rpc doc in
-        match res with
-        | Ok res -> Fiber.return @@ Ok res
-        | Error _ -> Ocamlformat.run state.ocamlformat doc
+        let* config = Ocamlformat.get_config state.ocamlformat doc in
+        match config with
+        | Ok _config ->
+          failwith "eee"
+          (* let message = "pe in" in *)
+          (* let msg = ShowMessageParams.create ~message ~type_:Warning in *)
+          (* let _ = *)
+          (*   let state : State.t = Server.state rpc in *)
+          (*   task_if_running state ~f:(fun () -> *)
+          (*       Server.notification rpc (ShowMessage msg)) *)
+          (* in *)
+          (* let* res = *)
+          (*   Ocamlformat_rpc.format_doc state.ocamlformat_rpc doc config *)
+          (* in *)
+          (* match res with *)
+          (* | Ok res -> Fiber.return @@ Ok res *)
+          (* | Error _ -> Ocamlformat.run state.ocamlformat doc *)
+        | Error _e ->
+          let message = "pe in" in
+          let msg = ShowMessageParams.create ~message ~type_:Warning in
+          let _ =
+            let state : State.t = Server.state rpc in
+            task_if_running state ~f:(fun () ->
+                Server.notification rpc (ShowMessage msg))
+          in
+
+          Ocamlformat.run state.ocamlformat doc
       in
+
       match res with
       | Ok result -> Fiber.return (Some result)
       | Error e ->
@@ -534,24 +558,30 @@ let hover server (state : State.t)
     let+ doc = query_doc doc pos
     and+ typ =
       (* We ask Ocamlformat to format this type *)
-      let* result = Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ in
-      match result with
-      | Ok v ->
-        (* OCamlformat adds an unnecessay newline at the end of the type *)
-        Fiber.return (String.trim v)
-      | Error `No_process -> Fiber.return typ
-      | Error (`Msg message) ->
-        (* We log OCamlformat errors and display the unformated type *)
-        let+ () =
-          let message =
-            sprintf
-              "An error occured while querying ocamlformat:\n\
-               Input type: %s\n\n\
-               Answer: %s" typ message
-          in
-          log_message server ~type_:Warning ~message
+      let* config = Ocamlformat.get_config state.ocamlformat doc in
+      match config with
+      | Ok config -> (
+        let* result =
+          Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ config
         in
-        typ
+        match result with
+        | Ok v ->
+          (* OCamlformat adds an unnecessay newline at the end of the type *)
+          Fiber.return (String.trim v)
+        | Error `No_process -> Fiber.return typ
+        | Error (`Msg message) ->
+          (* We log OCamlformat errors and display the unformated type *)
+          let+ () =
+            let message =
+              sprintf
+                "An error occured while querying ocamlformat:\n\
+                 Input type: %s\n\n\
+                 Answer: %s" typ message
+            in
+            log_message server ~type_:Warning ~message
+          in
+          typ)
+      | Error _ -> Fiber.return typ
     in
     let contents =
       let markdown =

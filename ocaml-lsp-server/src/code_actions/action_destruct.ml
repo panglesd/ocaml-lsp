@@ -40,12 +40,17 @@ let code_action (state : State.t) doc (params : CodeActionParams.t) =
     match res with
     | Ok (loc, newText) ->
       let+ newText =
-        let+ formatted_text =
-          Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ:newText
-        in
-        match formatted_text with
-        | Ok formatted_text -> formatted_text
-        | Error _ -> newText
+        let* config = Ocamlformat.get_config state.ocamlformat doc in
+        match config with
+        | Ok config -> (
+          let+ formatted_text =
+            Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ:newText
+              config
+          in
+          match formatted_text with
+          | Ok formatted_text -> formatted_text
+          | Error _ -> newText)
+        | Error _ -> Fiber.return newText
       in
       Some (code_action_of_case_analysis doc uri (loc, newText))
     | Error
