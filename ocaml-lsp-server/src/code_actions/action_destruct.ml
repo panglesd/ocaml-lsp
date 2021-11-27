@@ -41,7 +41,7 @@ let code_action (state : State.t) doc (params : CodeActionParams.t) =
     | Ok (loc, newText) ->
       let+ newText =
         let+ formatted_text =
-          Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ:newText
+          Ocamlformat_rpc.format_type state.ocamlformat_rpc doc ~typ:newText
         in
         match formatted_text with
         | Ok formatted_text -> formatted_text

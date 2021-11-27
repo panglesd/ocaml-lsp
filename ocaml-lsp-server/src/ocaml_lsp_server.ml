@@ -534,7 +534,9 @@ let hover server (state : State.t)
     let+ doc = query_doc doc pos
     and+ typ =
       (* We ask Ocamlformat to format this type *)
-      let* result = Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ in
+      let* result =
+        Ocamlformat_rpc.format_type state.ocamlformat_rpc doc ~typ
+      in
       match result with
       | Ok v ->
         (* OCamlformat adds an unnecessay newline at the end of the type *)

@@ -26,7 +26,7 @@ let code_action (state : State.t) doc (params : CodeActionParams.t) =
   | Intf ->
     let* intf = Inference.infer_intf ~force_open_impl:true state doc in
     let+ formatted_intf =
-      Ocamlformat_rpc.format_type state.ocamlformat_rpc ~typ:intf
+      Ocamlformat_rpc.format_type state.ocamlformat_rpc doc ~typ:intf
     in
     let intf =
       match formatted_intf with
