@@ -46,29 +46,6 @@ end = struct
       | Ok s -> s
       | Error e -> Exn_with_backtrace.reraise e)
 
-  let configure ~logger { io_thread; client; _ } =
-    (* We ask for 64 columns formatting as this appear to be the maximum size of
-       VScode popups. TODO We should probably allow some flexibility for other
-       editors that use the server. *)
-    match
-      Scheduler.async io_thread (fun () ->
-          Ocamlformat_rpc_lib.config
-            [ ("module-item-spacing", "compact"); ("margin", "63") ]
-            client)
-    with
-    | Error `Stopped -> Fiber.return ()
-    | Ok res -> (
-      let* res = Scheduler.await_no_cancel res in
-      match res with
-      | Ok (Ok ()) -> Fiber.return ()
-      | Ok (Error (`Msg msg)) ->
-        let message =
-          Printf.sprintf "An error occured while configuring ocamlformat: %s"
-            msg
-        in
-        logger ~type_:MessageType.Warning ~message
-      | Error e -> Exn_with_backtrace.reraise e)
-
   let create ~logger ~bin () =
     let bin = Fpath.to_string bin in
     let pid, stdout, stdin =
@@ -105,7 +82,6 @@ end = struct
       let process =
         { pid = Pid.of_int pid; input; output; io_thread; client }
       in
-      let* () = configure ~logger process in
       let+ () =
         let message =
           Printf.sprintf "Ocamlformat-RPC server started with PID %i" pid
@@ -145,7 +121,7 @@ let get_process t =
       Code_error.raise
         "Expected to receive `Started` or `Stopped` after mailing `Start`" [])
 
-let format_type t doc ~typ =
+let format_string ?(options = []) t doc ~str =
   let path = Document.uri doc |> Uri.to_string in
   let* p = get_process t in
   match p with
@@ -153,7 +129,7 @@ let format_type t doc ~typ =
   | Ok p -> (
     match
       Scheduler.async (Process.thread p) (fun () ->
-          Ocamlformat_rpc_lib.combined path [] typ (Process.client p))
+          Ocamlformat_rpc_lib.combined path options str (Process.client p))
     with
     | Error `Stopped -> Fiber.return @@ Error `No_process
     | Ok res -> (
@@ -162,10 +138,17 @@ let format_type t doc ~typ =
       | Ok s -> s
       | Error e -> Exn_with_backtrace.reraise e))
 
-let format_doc t doc =
+let format_doc ?(options = []) t doc =
   let txt = Document.source doc |> Msource.text in
-  let+ res = format_type t doc ~typ:txt in
+  let+ res = format_string ~options t doc ~str:txt in
   Result.map res ~f:(fun to_ -> Diff.edit ~from:txt ~to_)
+
+let format_type t doc ~typ =
+  (* We ask for 64 columns formatting as this appear to be the maximum size of *)
+  (* VScode popups. TODO We should probably allow some flexibility for other *)
+  let options = [ ("module-item-spacing", "compact"); ("margin", "63") ]
+  and str = typ in
+  format_string ~options t doc ~str
 
 let create_state () =
   Waiting_for_init
@@ -217,27 +200,25 @@ let run_rpc ~logger ~bin t =
         | _ -> ())))
 
 let run ~logger t =
-  match !t with
-  | _ -> (
-    match Bin.which "ocamlformat-rpc" with
-    | None ->
-      t := Stopped;
-      Fiber.return (Error `Binary_not_found)
-    | Some bin ->
-      let rec loop () =
+  match Bin.which "ocamlformat-rpc" with
+  | None ->
+    t := Stopped;
+    Fiber.return (Error `Binary_not_found)
+  | Some bin ->
+    let rec loop () =
+      match !t with
+      | Stopped -> Fiber.return (Ok ())
+      | Running _ -> assert false
+      | Waiting_for_init { ask_init; wait_init = _ } -> (
+        (* We wait for the first query to start the server or for ocamllsp to
+           exit *)
+        let* () = Fiber.Ivar.read ask_init in
         match !t with
-        | Stopped -> Fiber.return (Ok ())
+        | Waiting_for_init _ ->
+          let* () = run_rpc ~logger ~bin t in
+          (* We loop to automatically restart the server if it stopped *)
+          loop ()
         | Running _ -> assert false
-        | Waiting_for_init { ask_init; wait_init = _ } -> (
-          (* We wait for the first query to start the server or for ocamllsp to
-             exit *)
-          let* () = Fiber.Ivar.read ask_init in
-          match !t with
-          | Waiting_for_init _ ->
-            let* () = run_rpc ~logger ~bin t in
-            (* We loop to automatically restart the server if it stopped *)
-            loop ()
-          | Running _ -> assert false
-          | Stopped -> Fiber.return (Ok ()))
-      in
-      loop ())
+        | Stopped -> Fiber.return (Ok ()))
+    in
+    loop ()

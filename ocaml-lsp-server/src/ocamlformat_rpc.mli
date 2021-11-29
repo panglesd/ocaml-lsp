@@ -13,7 +13,8 @@ val format_type :
   -> (string, [> `Msg of string | `No_process ]) result Fiber.t
 
 val format_doc :
-     t
+     ?options:(string * string) list
+  -> t
   -> Document.t
   -> (TextEdit.t list, [> `Msg of string | `No_process ]) result Fiber.t
 
