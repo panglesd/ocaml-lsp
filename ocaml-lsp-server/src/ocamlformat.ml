@@ -66,8 +66,9 @@ type error =
   | Missing_binary of { binary : string }
   | Unexpected_result of { message : string }
   | Unknown_extension of Uri.t
+  | Hook_error of string * error
 
-let message = function
+let rec message = function
   | Unsupported_syntax syntax ->
     sprintf "formatting %s files is not supported"
       (Document.Syntax.human_name syntax)
@@ -80,6 +81,9 @@ let message = function
     Printf.sprintf "Unable to format. File %s has an unknown extension"
       (Uri.to_path uri)
   | Unexpected_result { message } -> message
+  | Hook_error (hook_error, err) ->
+    Printf.sprintf "All formatting methods failed:\n - %s\n - %s" hook_error
+      (message err)
 
 type formatter =
   | Reason of Document.Kind.t
@@ -118,16 +122,50 @@ let exec bin args stdin =
   | Unix.WEXITED 0 -> Result.Ok res.stdout
   | _ -> Result.Error (Unexpected_result { message = res.stderr })
 
+let hook = ref None
+
+let set_hook f = hook := Some f
+
 let run doc : (TextEdit.t list, error) result Fiber.t =
-  let res =
-    let open Result.O in
-    let* formatter = formatter doc in
-    let args = args formatter in
-    let+ binary = binary formatter in
-    (binary, args, Document.source doc |> Merlin_kernel.Msource.text)
+  let combine f1 f2 err =
+    let open Fiber.O in
+    let* res1 = f1 () in
+    match res1 with
+    | Ok o1 -> Fiber.return (Ok o1)
+    | Error e1 -> (
+      let+ res2 = f2 () in
+      match res2 with
+      | Ok o2 -> Ok o2
+      | Error e2 -> err e1 e2)
   in
-  match res with
-  | Error e -> Fiber.return (Error e)
-  | Ok (binary, args, contents) ->
-    exec binary args contents
-    |> Fiber.map ~f:(Result.map ~f:(fun to_ -> Diff.edit ~from:contents ~to_))
+  let run_hook () =
+    match !hook with
+    | None -> Fiber.return @@ Error None
+    | Some g ->
+      let from = Document.source doc |> Merlin_kernel.Msource.text in
+      Fiber.map
+        ~f:(function
+          | Ok to_ -> Ok (Diff.edit ~from ~to_)
+          | Error err -> Error (Some err))
+        (g doc)
+  in
+  let run_binary () =
+    let open Result.O in
+    let res =
+      let* formatter = formatter doc in
+      let args = args formatter in
+      let+ binary = binary formatter in
+      (binary, args, Document.source doc |> Merlin_kernel.Msource.text)
+    in
+    match res with
+    | Error e -> Fiber.return (Error e)
+    | Ok (binary, args, contents) ->
+      exec binary args contents
+      |> Fiber.map ~f:(Result.map ~f:(fun to_ -> Diff.edit ~from:contents ~to_))
+  in
+  let err err1 err2 =
+    match err1 with
+    | None -> Error err2
+    | Some err -> Error (Hook_error (err, err2))
+  in
+  combine run_hook run_binary err

@@ -387,6 +387,7 @@ module Formatter = struct
       match e with
       | Unsupported_syntax _
       | Unknown_extension _
+      | Hook_error _
       | Missing_binary _ ->
         InvalidRequest
       | Unexpected_result _ -> InternalError
@@ -1093,6 +1094,11 @@ let start () =
              Server.notification server (Server_notification.ShowMessage log)))
     ]
 
+let set_ocamlformat_hook = Ocamlformat.set_hook
+
 let run () =
   Unix.putenv "__MERLIN_MASTER_PID" (string_of_int (Unix.getpid ()));
   Lev_fiber.run (Lev.Loop.default ()) ~f:start
+
+module Document = Document
+module Uri = Uri
