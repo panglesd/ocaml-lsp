@@ -410,7 +410,8 @@ let text_document_lens
         let loc = item.location in
         let info =
           let range = Range.of_loc loc in
-          let command = Command.create ~title:typ ~command:"" () in
+          let title = if item.exposed then typ ^ " external" else typ in
+          let command = Command.create ~title ~command:"" () in
           CodeLens.create ~range ~command ()
         in
         info :: children

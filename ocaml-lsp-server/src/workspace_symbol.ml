@@ -83,6 +83,7 @@ end = struct
     ; children
     ; outline_name = id.txt
     ; deprecated
+    ; exposed = false
     }
   ;;
 
@@ -155,6 +156,7 @@ end = struct
         ; selection = te.tyext_txt.loc
         ; children
         ; deprecated
+        ; exposed = false
         }
     | Extension_constructor ec ->
       let deprecated = Type_utils.is_deprecated ec.ext_attributes in
@@ -183,6 +185,7 @@ end = struct
                ; selection = str_loc.Location.loc
                ; children = []
                ; deprecated
+               ; exposed = false
                }
            | None -> None)
         | _ -> None)
